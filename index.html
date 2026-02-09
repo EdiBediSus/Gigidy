@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Giggity.io - Multiplayer Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        #gameCanvas {
+            display: block;
+            background: #f0f0f0;
+            cursor: none;
+        }
+
+        #ui {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        #startScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            pointer-events: all;
+        }
+
+        #startScreen h1 {
+            font-size: 60px;
+            color: #667eea;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        #startScreen .subtitle {
+            font-size: 18px;
+            color: #666;
+            margin-bottom: 30px;
+        }
+
+        #nameInput {
+            padding: 15px;
+            font-size: 18px;
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            width: 300px;
+            margin-bottom: 20px;
+            outline: none;
+        }
+
+        #playButton {
+            padding: 15px 60px;
+            font-size: 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        #playButton:hover {
+            background: #764ba2;
+            transform: scale(1.05);
+        }
+
+        #stats {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px 20px;
+            border-radius: 10px;
+            font-size: 16px;
+            color: #333;
+        }
+
+        #leaderboard {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px 20px;
+            border-radius: 10px;
+            min-width: 200px;
+        }
+
+        #leaderboard h3 {
+            margin-bottom: 10px;
+            color: #667eea;
+            text-align: center;
+        }
+
+        .leaderboard-item {
+            padding: 5px 0;
+            font-size: 14px;
+        }
+
+        #connectionStatus {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .connected {
+            color: green;
+        }
+
+        .disconnected {
+            color: red;
+        }
+
+        .connecting {
+            color: orange;
+        }
+
+        #deathScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            background: rgba(255, 0, 0, 0.9);
+            padding: 40px;
+            border-radius: 20px;
+            color: white;
+            display: none;
+            pointer-events: all;
+        }
+
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 12px;
+            max-width: 250px;
+        }
+
+        #instructions h4 {
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="ui">
+        <div id="startScreen">
+            <h1>🎮 GIGGITY.IO</h1>
+            <div class="subtitle">Eat food, avoid bigger players, dominate!</div>
+            <input type="text" id="nameInput" placeholder="Enter your name" maxlength="15" value="Quagmire">
+            <br><br>
+            <button id="playButton">PLAY NOW!</button>
+            <div style="margin-top: 20px; font-size: 12px; color: #999;">
+                🎯 Move with mouse • Eat food to grow • Avoid bigger players
+            </div>
+        </div>
+
+        <div id="deathScreen">
+            <h2>💀 YOU DIED!</h2>
+            <p id="deathMessage" style="margin: 20px 0; font-size: 18px;"></p>
+            <button id="respawnButton" style="padding: 15px 40px; font-size: 18px; background: white; color: #667eea; border: none; border-radius: 10px; cursor: pointer;">
+                RESPAWN
+            </button>
+        </div>
+
+        <div id="stats" style="display: none;">
+            <div><strong>Score:</strong> <span id="score">0</span></div>
+            <div><strong>Players:</strong> <span id="playerCount">1</span></div>
+        </div>
+
+        <div id="leaderboard" style="display: none;">
+            <h3>🏆 Leaderboard</h3>
+            <div id="leaderboardList"></div>
+        </div>
+
+        <div id="instructions" style="display: none;">
+            <h4>📖 How to Play</h4>
+            <div>• Move mouse to navigate</div>
+            <div>• Eat dots to grow</div>
+            <div>• Eat smaller players</div>
+            <div>• Avoid bigger players</div>
+        </div>
+
+        <div id="connectionStatus">
+            <span class="disconnected">⚫ Not Connected</span>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // CONFIGURATION - PASTE YOUR RENDER URL HERE
+        // ============================================
+        const WEBSOCKET_URL = 'YOUR_RENDER_WEBSOCKET_URL_HERE';
+        // Example: 'wss://giggity-io-server.onrender.com'
+        // Make sure to use wss:// (not https://)
+        // ============================================
+
+        // Game Configuration
+        const CONFIG = {
+            WORLD_WIDTH: 3000,
+            WORLD_HEIGHT: 3000,
+            PLAYER_START_SIZE: 20,
+            FOOD_SIZE: 5,
+            FOOD_COUNT: 200,
+            SPEED_MULTIPLIER: 2.5,
+        };
+
+        // Game state
+        let canvas, ctx;
+        let gameStarted = false;
+        let ws = null;
+        
+        let player = {
+            id: null,
+            x: 0,
+            y: 0,
+            size: CONFIG.PLAYER_START_SIZE,
+            name: '',
+            score: 0,
+            color: '#FF6B6B'
+        };
+
+        let otherPlayers = new Map();
+        let food = [];
+        let camera = { x: 0, y: 0, zoom: 1 };
+        let mouse = { x: 0, y: 0 };
+        let reconnectAttempts = 0;
+        let maxReconnectAttempts = 5;
+
+        // Initialize
+        function init() {
+            canvas = document.getElementById('gameCanvas');
+            ctx = canvas.getContext('2d');
+            
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            
+            canvas.addEventListener('mousemove', (e) => {
+                const rect = canvas.getBoundingClientRect();
+                mouse.x = e.clientX - rect.left;
+                mouse.y = e.clientY - rect.top;
+            });
+
+            document.getElementById('playButton').addEventListener('click', startGame);
+            document.getElementById('respawnButton').addEventListener('click', respawn);
+            document.getElementById('nameInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') startGame();
+            });
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+
+        function startGame() {
+            const name = document.getElementById('nameInput').value.trim() || 'Quagmire';
+            
+            // Validate WebSocket URL
+            if (WEBSOCKET_URL === 'YOUR_RENDER_WEBSOCKET_URL_HERE') {
+                alert('⚠️ Please update the WEBSOCKET_URL in the code with your Render.com URL!\n\nOpen the HTML file and replace:\nYOUR_RENDER_WEBSOCKET_URL_HERE\n\nwith your actual Render WebSocket URL (wss://your-app.onrender.com)');
+                return;
+            }
+
+            player.name = name;
+            player.color = getRandomColor();
+            
+            document.getElementById('startScreen').style.display = 'none';
+            document.getElementById('stats').style.display = 'block';
+            document.getElementById('leaderboard').style.display = 'block';
+            document.getElementById('instructions').style.display = 'block';
+            
+            gameStarted = true;
+            connectWebSocket();
+        }
+
+        function respawn() {
+            document.getElementById('deathScreen').style.display = 'none';
+            
+            // Reset player
+            player.score = 0;
+            player.size = CONFIG.PLAYER_START_SIZE;
+            
+            // Send respawn to server
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'respawn'
+                }));
+            }
+        }
+
+        function connectWebSocket() {
+            try {
+                updateConnectionStatus('connecting');
+                ws = new WebSocket(WEBSOCKET_URL);
+                
+                ws.onopen = () => {
+                    console.log('Connected to server');
+                    updateConnectionStatus('connected');
+                    reconnectAttempts = 0;
+                    
+                    // Send join message
+                    ws.send(JSON.stringify({
+                        type: 'join',
+                        name: player.name,
+                        color: player.color
+                    }));
+                };
+
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    handleServerMessage(data);
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    updateConnectionStatus('disconnected');
+                };
+
+                ws.onclose = () => {
+                    console.log('Disconnected from server');
+                    updateConnectionStatus('disconnected');
+                    
+                    // Attempt reconnect
+                    if (gameStarted && reconnectAttempts < maxReconnectAttempts) {
+                        reconnectAttempts++;
+                        setTimeout(() => {
+                            console.log(`Reconnecting... (Attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
+                            connectWebSocket();
+                        }, 3000);
+                    } else if (reconnectAttempts >= maxReconnectAttempts) {
+                        alert('Lost connection to server. Please refresh the page.');
+                    }
+                };
+            } catch (error) {
+                console.error('Failed to connect:', error);
+                alert('Failed to connect to server. Please check the WebSocket URL in the code.');
+            }
+        }
+
+        function handleServerMessage(data) {
+            switch (data.type) {
+                case 'init':
+                    player.id = data.id;
+                    player.x = data.x;
+                    player.y = data.y;
+                    break;
+                    
+                case 'gameState':
+                    // Update other players
+                    otherPlayers.clear();
+                    data.players.forEach(p => {
+                        if (p.id !== player.id) {
+                            otherPlayers.set(p.id, p);
+                        } else {
+                            // Update own player from server
+                            player.x = p.x;
+                            player.y = p.y;
+                            player.size = p.size;
+                            player.score = p.score;
+                        }
+                    });
+                    
+                    // Update food
+                    food = data.food;
+                    
+                    // Update player count
+                    document.getElementById('playerCount').textContent = data.players.length;
+                    
+                    // Update leaderboard
+                    updateLeaderboard(data.players);
+                    break;
+
+                case 'death':
+                    showDeathScreen(data.killedBy);
+                    break;
+            }
+        }
+
+        function showDeathScreen(killerName) {
+            const deathScreen = document.getElementById('deathScreen');
+            const deathMessage = document.getElementById('deathMessage');
+            
+            deathMessage.textContent = `You were eaten by ${killerName}!`;
+            deathScreen.style.display = 'block';
+            
+            // Auto-hide after 3 seconds
+            setTimeout(() => {
+                if (deathScreen.style.display === 'block') {
+                    respawn();
+                }
+            }, 3000);
+        }
+
+        function updateConnectionStatus(status) {
+            const statusEl = document.getElementById('connectionStatus');
+            if (status === 'connected') {
+                statusEl.innerHTML = '<span class="connected">🟢 Connected</span>';
+            } else if (status === 'connecting') {
+                statusEl.innerHTML = '<span class="connecting">🟡 Connecting...</span>';
+            } else {
+                statusEl.innerHTML = '<span class="disconnected">🔴 Disconnected</span>';
+            }
+        }
+
+        function updateLeaderboard(players) {
+            const sorted = [...players].sort((a, b) => b.score - a.score).slice(0, 10);
+            const list = document.getElementById('leaderboardList');
+            
+            list.innerHTML = sorted.map((p, i) => {
+                const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+                const isMe = p.id === player.id ? ' <strong>(You)</strong>' : '';
+                return `<div class="leaderboard-item">${medal} ${p.name}: ${p.score}${isMe}</div>`;
+            }).join('');
+        }
+
+        function gameLoop(timestamp) {
+            update();
+            render();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function update() {
+            if (!gameStarted) return;
+
+            // Send player movement to server
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const worldX = (mouse.x - canvas.width / 2) / camera.zoom + camera.x;
+                const worldY = (mouse.y - canvas.height / 2) / camera.zoom + camera.y;
+                
+                ws.send(JSON.stringify({
+                    type: 'move',
+                    targetX: worldX,
+                    targetY: worldY
+                }));
+            }
+
+            // Update camera
+            camera.x = player.x;
+            camera.y = player.y;
+            camera.zoom = Math.max(0.5, 1 - player.size / 300);
+
+            // Update score display
+            document.getElementById('score').textContent = player.score;
+        }
+
+        function render() {
+            // Clear canvas
+            ctx.fillStyle = '#f0f0f0';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+            
+            // Apply camera transform
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            ctx.scale(camera.zoom, camera.zoom);
+            ctx.translate(-camera.x, -camera.y);
+
+            // Draw grid
+            drawGrid();
+
+            // Draw food
+            food.forEach(f => {
+                ctx.fillStyle = f.color;
+                ctx.beginPath();
+                ctx.arc(f.x, f.y, CONFIG.FOOD_SIZE, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Draw other players
+            otherPlayers.forEach(p => {
+                drawPlayer(p);
+            });
+
+            // Draw player
+            if (gameStarted) {
+                drawPlayer(player);
+            }
+
+            ctx.restore();
+
+            // Draw custom cursor (Quagmire face)
+            drawCursor();
+        }
+
+        function drawGrid() {
+            const gridSize = 50;
+            ctx.strokeStyle = '#ddd';
+            ctx.lineWidth = 1;
+
+            const startX = Math.floor((camera.x - canvas.width / 2 / camera.zoom) / gridSize) * gridSize;
+            const endX = Math.ceil((camera.x + canvas.width / 2 / camera.zoom) / gridSize) * gridSize;
+            const startY = Math.floor((camera.y - canvas.height / 2 / camera.zoom) / gridSize) * gridSize;
+            const endY = Math.ceil((camera.y + canvas.height / 2 / camera.zoom) / gridSize) * gridSize;
+
+            for (let x = startX; x <= endX; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, startY);
+                ctx.lineTo(x, endY);
+                ctx.stroke();
+            }
+
+            for (let y = startY; y <= endY; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(startX, y);
+                ctx.lineTo(endX, y);
+                ctx.stroke();
+            }
+        }
+
+        function drawPlayer(p) {
+            // Draw player circle
+            ctx.fillStyle = p.color;
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Draw Quagmire face features
+            const faceScale = p.size / 40;
+            
+            // Eyes
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(p.x - p.size * 0.25, p.y - p.size * 0.15, p.size * 0.15, 0, Math.PI * 2);
+            ctx.arc(p.x + p.size * 0.25, p.y - p.size * 0.15, p.size * 0.15, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Pupils
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(p.x - p.size * 0.25, p.y - p.size * 0.15, p.size * 0.08, 0, Math.PI * 2);
+            ctx.arc(p.x + p.size * 0.25, p.y - p.size * 0.15, p.size * 0.08, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Mouth (Giggity smile)
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2 * faceScale;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y + p.size * 0.1, p.size * 0.4, 0.2, Math.PI - 0.2);
+            ctx.stroke();
+
+            // Teeth
+            ctx.fillStyle = '#fff';
+            const teethCount = 5;
+            const teethWidth = (p.size * 0.8) / teethCount;
+            for (let i = 0; i < teethCount; i++) {
+                ctx.fillRect(
+                    p.x - p.size * 0.4 + i * teethWidth,
+                    p.y + p.size * 0.1,
+                    teethWidth * 0.8,
+                    p.size * 0.1
+                );
+            }
+
+            // Famous chin
+            ctx.fillStyle = p.color;
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.ellipse(p.x, p.y + p.size * 0.6, p.size * 0.2, p.size * 0.3, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Draw name
+            ctx.fillStyle = '#000';
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 3;
+            ctx.font = `bold ${Math.max(12, p.size / 3)}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.strokeText(p.name, p.x, p.y - p.size - 15);
+            ctx.fillText(p.name, p.x, p.y - p.size - 15);
+        }
+
+        function drawCursor() {
+            const size = 20;
+            
+            // Cursor background
+            ctx.fillStyle = '#FF6B6B';
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(mouse.x, mouse.y, size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Simple Quagmire face on cursor
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(mouse.x - size * 0.3, mouse.y - size * 0.2, size * 0.2, 0, Math.PI * 2);
+            ctx.arc(mouse.x + size * 0.3, mouse.y - size * 0.2, size * 0.2, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(mouse.x - size * 0.3, mouse.y - size * 0.2, size * 0.1, 0, Math.PI * 2);
+            ctx.arc(mouse.x + size * 0.3, mouse.y - size * 0.2, size * 0.1, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Smile
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(mouse.x, mouse.y + size * 0.1, size * 0.5, 0.3, Math.PI - 0.3);
+            ctx.stroke();
+        }
+
+        function getRandomColor() {
+            const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2'];
+            return colors[Math.floor(Math.random() * colors.length)];
+        }
+
+        // Start the game
+        init();
+    </script>
+</body>
+</html>

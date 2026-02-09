@@ -1,0 +1,22 @@
+{
+  "name": "giggity-io-server",
+  "version": "1.0.0",
+  "description": "Multiplayer WebSocket server for Giggity.io game",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "websocket",
+    "game",
+    "multiplayer"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.14.2"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
