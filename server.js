@@ -8,7 +8,7 @@ const CONFIG = {
     PLAYER_START_SIZE: 20,
     FOOD_SIZE: 5,
     FOOD_COUNT: 200,
-    SPEED_MULTIPLIER: 10,
+    SPEED_MULTIPLIER: 3, // Optimized speed (was multiplied by tiny deltaTime before)
     TICK_RATE: 60, // Server updates per second
 };
 
@@ -59,7 +59,7 @@ function updatePlayer(player, deltaTime) {
     const distance = Math.sqrt(dx * dx + dy * dy);
     
     if (distance > 1) {
-        const speed = CONFIG.SPEED_MULTIPLIER * (100 / player.size) * deltaTime;
+        const speed = CONFIG.SPEED_MULTIPLIER * (100 / player.size);
         const moveDistance = Math.min(speed, distance);
         
         player.x += (dx / distance) * moveDistance;
