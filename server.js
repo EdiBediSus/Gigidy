@@ -8,7 +8,7 @@ const CONFIG = {
     PLAYER_START_SIZE: 20,
     FOOD_SIZE: 5,
     FOOD_COUNT: 200,
-    SPEED_MULTIPLIER: 2.5,
+    SPEED_MULTIPLIER: 10,
     TICK_RATE: 60, // Server updates per second
 };
 
