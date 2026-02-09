@@ -219,8 +219,8 @@
         // ============================================
         // CONFIGURATION - PASTE YOUR RENDER URL HERE
         // ============================================
-        const WEBSOCKET_URL = 'wss://gigidy.onrender.com';
-        // Example: 'wss://gigidy.onrender.com'
+        const WEBSOCKET_URL = 'YOUR_RENDER_WEBSOCKET_URL_HERE';
+        // Example: 'wss://giggity-io-server.onrender.com'
         // Make sure to use wss:// (not https://)
         // ============================================
 
@@ -231,7 +231,7 @@
             PLAYER_START_SIZE: 20,
             FOOD_SIZE: 5,
             FOOD_COUNT: 200,
-            SPEED_MULTIPLIER: 10,
+            SPEED_MULTIPLIER: 3, // Optimized speed
         };
 
         // Game state
@@ -288,7 +288,7 @@
             const name = document.getElementById('nameInput').value.trim() || 'Quagmire';
             
             // Validate WebSocket URL
-            if (WEBSOCKET_URL === 'YOUR_RENDER_WEBSOCKET_URL_HERE') {
+            if (WEBSOCKET_URL === 'https://gigidy.onrender.com') {
                 alert('⚠️ Please update the WEBSOCKET_URL in the code with your Render.com URL!\n\nOpen the HTML file and replace:\nYOUR_RENDER_WEBSOCKET_URL_HERE\n\nwith your actual Render WebSocket URL (wss://your-app.onrender.com)');
                 return;
             }
