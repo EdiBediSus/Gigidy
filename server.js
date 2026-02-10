@@ -7,9 +7,9 @@ const CONFIG = {
     WORLD_HEIGHT: 3000,
     PLAYER_START_SIZE: 20,
     FOOD_SIZE: 5,
-    FOOD_COUNT: 150, // Reduced from 200 to reduce server load
-    SPEED_MULTIPLIER: 3, // Reduced from 5 for slower, smoother movement
-    TICK_RATE: 20, // Reduced from 30 to significantly reduce lag
+    FOOD_COUNT: 100, // Reduced from 150 to reduce server load even more
+    SPEED_MULTIPLIER: 3,
+    TICK_RATE: 15, // Reduced from 20 to significantly reduce lag
 };
 
 // Game state
