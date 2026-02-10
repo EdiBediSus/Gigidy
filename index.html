@@ -20,7 +20,7 @@
         #gameCanvas {
             display: block;
             background: #f0f0f0;
-            cursor: none;
+            cursor: crosshair;
         }
 
         #ui {
@@ -167,12 +167,6 @@
             color: #667eea;
             margin-bottom: 8px;
         }
-
-        .note {
-            font-size: 12px;
-            color: #888;
-            margin-top: 10px;
-        }
     </style>
 </head>
 <body>
@@ -188,7 +182,7 @@
             <br><br>
             <button id="playButton">PLAY NOW!</button>
             <div style="margin-top: 20px; font-size: 12px; color: #999;">
-                🎯 Move with mouse • Eat food to grow • Avoid bigger players
+                🎯 Use WASD or Arrow Keys to move • Eat food to grow
             </div>
         </div>
 
@@ -211,11 +205,12 @@
         </div>
 
         <div id="instructions" style="display: none;">
-            <h4>📖 How to Play</h4>
-            <div>• Move mouse to navigate</div>
-            <div>• Eat dots to grow</div>
-            <div>• Eat smaller players</div>
-            <div>• Avoid bigger players</div>
+            <h4>📖 Controls</h4>
+            <div>• <strong>W/↑</strong> - Move up</div>
+            <div>• <strong>A/←</strong> - Move left</div>
+            <div>• <strong>S/↓</strong> - Move down</div>
+            <div>• <strong>D/→</strong> - Move right</div>
+            <div style="margin-top: 10px;">Eat dots and smaller players!</div>
         </div>
 
         <div id="connectionStatus">
@@ -225,20 +220,17 @@
 
     <script>
         // ============================================
-        // CONFIGURATION - PASTE YOUR RENDER URL HERE
+        // CONFIGURATION - YOUR RENDER URL
         // ============================================
         const WEBSOCKET_URL = 'wss://gigidy.onrender.com';
-        // Example: 'wss://giggity-io-server.onrender.com'
-        // Make sure to use wss:// (not https://)
         // ============================================
 
         // ============================================
         // DEFAULT CHARACTER IMAGE (optional)
         // ============================================
-        const DEFAULT_CHARACTER_IMAGE = '';
+        const DEFAULT_CHARACTER_IMAGE = 'images.jfif';
         // Paste your image URL here to replace the Quagmire face
-        // Upload image to your GitHub repo and use:
-        // 'https://USERNAME.github.io/giggity-io/character.png'
+        // Example: 'https://username.github.io/giggity-io/character.png'
         // Leave empty '' to use the default Quagmire face
         // ============================================
 
@@ -248,8 +240,8 @@
             WORLD_HEIGHT: 3000,
             PLAYER_START_SIZE: 20,
             FOOD_SIZE: 5,
-            FOOD_COUNT: 150, // Reduced to match server
-            SPEED_MULTIPLIER: 3, // Reduced from 5 for slower movement
+            FOOD_COUNT: 100,
+            SPEED_MULTIPLIER: 3,
         };
 
         // Game state
@@ -266,20 +258,29 @@
             score: 0,
             color: '#FF6B6B',
             imageUrl: null,
-            image: null
+            image: null,
+            velocityX: 0,
+            velocityY: 0
         };
 
         let otherPlayers = new Map();
-        let playerImages = new Map(); // Cache for loaded images
+        let playerImages = new Map();
         let food = [];
         let camera = { x: 0, y: 0, zoom: 1 };
-        let mouse = { x: 0, y: 0 };
         let reconnectAttempts = 0;
         let maxReconnectAttempts = 5;
 
-        // Client-side interpolation for smooth movement
-        let lastServerUpdate = Date.now();
-        let interpolationDelay = 100; // ms
+        // Keyboard controls
+        let keys = {
+            w: false,
+            a: false,
+            s: false,
+            d: false,
+            ArrowUp: false,
+            ArrowLeft: false,
+            ArrowDown: false,
+            ArrowRight: false
+        };
 
         // Initialize
         function init() {
@@ -289,10 +290,19 @@
             resizeCanvas();
             window.addEventListener('resize', resizeCanvas);
             
-            canvas.addEventListener('mousemove', (e) => {
-                const rect = canvas.getBoundingClientRect();
-                mouse.x = e.clientX - rect.left;
-                mouse.y = e.clientY - rect.top;
+            // Keyboard controls
+            document.addEventListener('keydown', (e) => {
+                if (keys.hasOwnProperty(e.key)) {
+                    keys[e.key] = true;
+                    e.preventDefault();
+                }
+            });
+
+            document.addEventListener('keyup', (e) => {
+                if (keys.hasOwnProperty(e.key)) {
+                    keys[e.key] = false;
+                    e.preventDefault();
+                }
             });
 
             document.getElementById('playButton').addEventListener('click', startGame);
@@ -317,7 +327,7 @@
                 }
                 
                 const img = new Image();
-                img.crossOrigin = "anonymous"; // Enable CORS
+                img.crossOrigin = "anonymous";
                 img.onload = () => resolve(img);
                 img.onerror = () => {
                     console.warn('Failed to load image:', url);
@@ -330,23 +340,15 @@
         async function startGame() {
             const name = document.getElementById('nameInput').value.trim() || 'Quagmire';
             
-            // Validate WebSocket URL
-            if (WEBSOCKET_URL === 'YOUR_RENDER_WEBSOCKET_URL_HERE') {
-                alert('⚠️ Please update the WEBSOCKET_URL in the code with your Render.com URL!\n\nOpen the HTML file and replace:\nYOUR_RENDER_WEBSOCKET_URL_HERE\n\nwith your actual Render WebSocket URL (wss://your-app.onrender.com)');
-                return;
-            }
-
             player.name = name;
             player.color = getRandomColor();
-            player.imageUrl = DEFAULT_CHARACTER_IMAGE; // Use the default image from config
+            player.imageUrl = DEFAULT_CHARACTER_IMAGE;
             
-            // Load custom image if provided in config
+            // Load custom image if provided
             if (DEFAULT_CHARACTER_IMAGE) {
                 player.image = await loadImage(DEFAULT_CHARACTER_IMAGE);
                 if (player.image) {
-                    console.log('Custom character image loaded successfully!');
-                } else {
-                    console.log('Failed to load custom image, using default Quagmire face');
+                    console.log('Custom character image loaded!');
                 }
             }
             
@@ -361,16 +363,11 @@
 
         function respawn() {
             document.getElementById('deathScreen').style.display = 'none';
-            
-            // Reset player
             player.score = 0;
             player.size = CONFIG.PLAYER_START_SIZE;
             
-            // Send respawn to server
             if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'respawn'
-                }));
+                ws.send(JSON.stringify({ type: 'respawn' }));
             }
         }
 
@@ -384,7 +381,6 @@
                     updateConnectionStatus('connected');
                     reconnectAttempts = 0;
                     
-                    // Send join message
                     ws.send(JSON.stringify({
                         type: 'join',
                         name: player.name,
@@ -407,20 +403,17 @@
                     console.log('Disconnected from server');
                     updateConnectionStatus('disconnected');
                     
-                    // Attempt reconnect
                     if (gameStarted && reconnectAttempts < maxReconnectAttempts) {
                         reconnectAttempts++;
                         setTimeout(() => {
-                            console.log(`Reconnecting... (Attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
+                            console.log(`Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})`);
                             connectWebSocket();
                         }, 3000);
-                    } else if (reconnectAttempts >= maxReconnectAttempts) {
-                        alert('Lost connection to server. Please refresh the page.');
                     }
                 };
             } catch (error) {
                 console.error('Failed to connect:', error);
-                alert('Failed to connect to server. Please check the WebSocket URL in the code.');
+                alert('Failed to connect to server. Please check your connection.');
             }
         }
 
@@ -433,24 +426,17 @@
                     break;
                     
                 case 'gameState':
-                    lastServerUpdate = Date.now();
-                    
-                    // Update other players
                     otherPlayers.clear();
                     for (const p of data.players) {
                         if (p.id !== player.id) {
                             otherPlayers.set(p.id, p);
                             
-                            // Load image if player has one and we haven't loaded it yet
                             if (p.imageUrl && !playerImages.has(p.id)) {
                                 loadImage(p.imageUrl).then(img => {
-                                    if (img) {
-                                        playerImages.set(p.id, img);
-                                    }
+                                    if (img) playerImages.set(p.id, img);
                                 });
                             }
                         } else {
-                            // Smoothly update own player position
                             player.x = p.x;
                             player.y = p.y;
                             player.size = p.size;
@@ -458,13 +444,8 @@
                         }
                     }
                     
-                    // Update food
                     food = data.food;
-                    
-                    // Update player count
                     document.getElementById('playerCount').textContent = data.players.length;
-                    
-                    // Update leaderboard
                     updateLeaderboard(data.players);
                     break;
 
@@ -481,7 +462,6 @@
             deathMessage.textContent = `You were eaten by ${killerName}!`;
             deathScreen.style.display = 'block';
             
-            // Auto-hide after 3 seconds
             setTimeout(() => {
                 if (deathScreen.style.display === 'block') {
                     respawn();
@@ -511,9 +491,9 @@
             }).join('');
         }
 
-        // Throttle sending move updates
+        // Movement update - only send when keys are pressed
         let lastMoveSent = 0;
-        const moveThrottle = 100; // Increased from 50ms to reduce network traffic and lag
+        const moveThrottle = 150; // Send updates less frequently to reduce lag
 
         function gameLoop(timestamp) {
             update();
@@ -524,16 +504,34 @@
         function update() {
             if (!gameStarted) return;
 
-            // Throttle move updates to reduce network traffic
+            // Calculate movement from WASD/Arrow keys
+            let moveX = 0;
+            let moveY = 0;
+
+            if (keys.w || keys.ArrowUp) moveY -= 1;
+            if (keys.s || keys.ArrowDown) moveY += 1;
+            if (keys.a || keys.ArrowLeft) moveX -= 1;
+            if (keys.d || keys.ArrowRight) moveX += 1;
+
+            // Normalize diagonal movement
+            if (moveX !== 0 && moveY !== 0) {
+                const length = Math.sqrt(moveX * moveX + moveY * moveY);
+                moveX /= length;
+                moveY /= length;
+            }
+
+            // Send position to server (throttled)
             const now = Date.now();
             if (ws && ws.readyState === WebSocket.OPEN && now - lastMoveSent > moveThrottle) {
-                const worldX = (mouse.x - canvas.width / 2) / camera.zoom + camera.x;
-                const worldY = (mouse.y - canvas.height / 2) / camera.zoom + camera.y;
+                // Calculate target position based on key input
+                const speed = 500; // How far ahead to target
+                const targetX = player.x + (moveX * speed);
+                const targetY = player.y + (moveY * speed);
                 
                 ws.send(JSON.stringify({
                     type: 'move',
-                    targetX: worldX,
-                    targetY: worldY
+                    targetX: targetX,
+                    targetY: targetY
                 }));
                 
                 lastMoveSent = now;
@@ -544,7 +542,6 @@
             camera.y = player.y;
             camera.zoom = Math.max(0.5, 1 - player.size / 300);
 
-            // Update score display
             document.getElementById('score').textContent = player.score;
         }
 
@@ -555,7 +552,7 @@
 
             ctx.save();
             
-            // Apply camera transform
+            // Apply camera
             ctx.translate(canvas.width / 2, canvas.height / 2);
             ctx.scale(camera.zoom, camera.zoom);
             ctx.translate(-camera.x, -camera.y);
@@ -583,9 +580,6 @@
             }
 
             ctx.restore();
-
-            // Draw simple dot cursor
-            drawCursor();
         }
 
         function drawGrid() {
@@ -614,7 +608,7 @@
         }
 
         function drawPlayer(p, customImage) {
-            // Draw player circle
+            // Draw circle
             ctx.fillStyle = p.color;
             ctx.strokeStyle = '#fff';
             ctx.lineWidth = 3;
@@ -623,7 +617,7 @@
             ctx.fill();
             ctx.stroke();
 
-            // Draw custom image if available
+            // Draw custom image or default face
             if (customImage) {
                 ctx.save();
                 ctx.beginPath();
@@ -631,16 +625,10 @@
                 ctx.clip();
                 
                 const imgSize = p.size * 2;
-                ctx.drawImage(
-                    customImage,
-                    p.x - p.size,
-                    p.y - p.size,
-                    imgSize,
-                    imgSize
-                );
+                ctx.drawImage(customImage, p.x - p.size, p.y - p.size, imgSize, imgSize);
                 ctx.restore();
             } else {
-                // Draw default Quagmire face
+                // Draw Quagmire face
                 const faceScale = p.size / 40;
                 
                 // Eyes
@@ -657,27 +645,14 @@
                 ctx.arc(p.x + p.size * 0.25, p.y - p.size * 0.15, p.size * 0.08, 0, Math.PI * 2);
                 ctx.fill();
 
-                // Mouth
+                // Smile
                 ctx.strokeStyle = '#000';
                 ctx.lineWidth = 2 * faceScale;
                 ctx.beginPath();
                 ctx.arc(p.x, p.y + p.size * 0.1, p.size * 0.4, 0.2, Math.PI - 0.2);
                 ctx.stroke();
 
-                // Teeth
-                ctx.fillStyle = '#fff';
-                const teethCount = 5;
-                const teethWidth = (p.size * 0.8) / teethCount;
-                for (let i = 0; i < teethCount; i++) {
-                    ctx.fillRect(
-                        p.x - p.size * 0.4 + i * teethWidth,
-                        p.y + p.size * 0.1,
-                        teethWidth * 0.8,
-                        p.size * 0.1
-                    );
-                }
-
-                // Famous chin
+                // Chin
                 ctx.fillStyle = p.color;
                 ctx.strokeStyle = '#fff';
                 ctx.lineWidth = 2;
@@ -693,26 +668,8 @@
             ctx.lineWidth = 3;
             ctx.font = `bold ${Math.max(12, p.size / 3)}px Arial`;
             ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
             ctx.strokeText(p.name, p.x, p.y - p.size - 15);
             ctx.fillText(p.name, p.x, p.y - p.size - 15);
-        }
-
-        function drawCursor() {
-            // Simple dot cursor
-            ctx.fillStyle = 'rgba(102, 126, 234, 0.8)';
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.arc(mouse.x, mouse.y, 8, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
-            
-            // Small center dot
-            ctx.fillStyle = '#fff';
-            ctx.beginPath();
-            ctx.arc(mouse.x, mouse.y, 2, 0, Math.PI * 2);
-            ctx.fill();
         }
 
         function getRandomColor() {
