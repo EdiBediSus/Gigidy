@@ -235,7 +235,7 @@
         // ============================================
         // DEFAULT CHARACTER IMAGE (optional)
         // ============================================
-        const DEFAULT_CHARACTER_IMAGE = 'images.jfif';
+        const DEFAULT_CHARACTER_IMAGE = '';
         // Paste your image URL here to replace the Quagmire face
         // Upload image to your GitHub repo and use:
         // 'https://USERNAME.github.io/giggity-io/character.png'
@@ -248,8 +248,8 @@
             WORLD_HEIGHT: 3000,
             PLAYER_START_SIZE: 20,
             FOOD_SIZE: 5,
-            FOOD_COUNT: 200,
-            SPEED_MULTIPLIER: 5,
+            FOOD_COUNT: 150, // Reduced to match server
+            SPEED_MULTIPLIER: 3, // Reduced from 5 for slower movement
         };
 
         // Game state
@@ -331,7 +331,7 @@
             const name = document.getElementById('nameInput').value.trim() || 'Quagmire';
             
             // Validate WebSocket URL
-            if (WEBSOCKET_URL === '') {
+            if (WEBSOCKET_URL === 'YOUR_RENDER_WEBSOCKET_URL_HERE') {
                 alert('⚠️ Please update the WEBSOCKET_URL in the code with your Render.com URL!\n\nOpen the HTML file and replace:\nYOUR_RENDER_WEBSOCKET_URL_HERE\n\nwith your actual Render WebSocket URL (wss://your-app.onrender.com)');
                 return;
             }
@@ -513,7 +513,7 @@
 
         // Throttle sending move updates
         let lastMoveSent = 0;
-        const moveThrottle = 50; // ms
+        const moveThrottle = 100; // Increased from 50ms to reduce network traffic and lag
 
         function gameLoop(timestamp) {
             update();
