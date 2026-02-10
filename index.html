@@ -331,7 +331,7 @@
             const name = document.getElementById('nameInput').value.trim() || 'Quagmire';
             
             // Validate WebSocket URL
-            if (WEBSOCKET_URL === 'wss://gigidy.onrender.com') {
+            if (WEBSOCKET_URL === '') {
                 alert('⚠️ Please update the WEBSOCKET_URL in the code with your Render.com URL!\n\nOpen the HTML file and replace:\nYOUR_RENDER_WEBSOCKET_URL_HERE\n\nwith your actual Render WebSocket URL (wss://your-app.onrender.com)');
                 return;
             }
