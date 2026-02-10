@@ -1,663 +1,444 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Giggity.io - Multiplayer Game</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+const WebSocket = require('ws');
+const http = require('http');
 
-        body {
-            font-family: 'Arial', sans-serif;
-            overflow: hidden;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        }
+// Configuration
+const CONFIG = {
+    WORLD_WIDTH: 2000, // Reduced world size for better performance
+    WORLD_HEIGHT: 2000,
+    PLAYER_START_SIZE: 20,
+    FOOD_SIZE: 5,
+    FOOD_COUNT: 50, // Drastically reduced from 100 for smooth performance
+    SPEED_MULTIPLIER: 3,
+    TICK_RATE: 10, // Very low tick rate for minimal server load
+};
 
-        #gameCanvas {
-            display: block;
-            background: #f0f0f0;
-            cursor: none;
-        }
+// Game state
+const players = new Map();
+const food = [];
 
-        #ui {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-        }
+// Initialize food
+function initFood() {
+    for (let i = 0; i < CONFIG.FOOD_COUNT; i++) {
+        food.push(createFood());
+    }
+}
 
-        #startScreen {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            text-align: center;
-            background: rgba(255, 255, 255, 0.95);
-            padding: 40px;
-            border-radius: 20px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-            pointer-events: all;
-        }
+function createFood() {
+    return {
+        id: Math.random().toString(36).substr(2, 9),
+        x: Math.random() * CONFIG.WORLD_WIDTH,
+        y: Math.random() * CONFIG.WORLD_HEIGHT,
+        color: getRandomColor()
+    };
+}
 
-        #startScreen h1 {
-            font-size: 60px;
-            color: #667eea;
-            margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
-        }
+function getRandomColor() {
+    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2'];
+    return colors[Math.floor(Math.random() * colors.length)];
+}
 
-        #startScreen .subtitle {
-            font-size: 18px;
-            color: #666;
-            margin-bottom: 30px;
-        }
+function createPlayer(id, name, color, imageUrl) {
+    return {
+        id,
+        name: name || 'Quagmire',
+        color: color || getRandomColor(),
+        imageUrl: imageUrl || null,
+        x: Math.random() * CONFIG.WORLD_WIDTH,
+        y: Math.random() * CONFIG.WORLD_HEIGHT,
+        size: CONFIG.PLAYER_START_SIZE,
+        score: 0,
+        targetX: 0,
+        targetY: 0,
+        ws: null
+    };
+}
 
-        input {
-            padding: 15px;
-            font-size: 18px;
-            border: 2px solid #667eea;
-            border-radius: 10px;
-            width: 300px;
-            margin-bottom: 15px;
-            outline: none;
-        }
-
-        #playButton {
-            padding: 15px 60px;
-            font-size: 20px;
-            background: #667eea;
-            color: white;
-            border: none;
-            border-radius: 10px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        #playButton:hover {
-            background: #764ba2;
-            transform: scale(1.05);
-        }
-
-        #stats {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 15px 20px;
-            border-radius: 10px;
-            font-size: 16px;
-            color: #333;
-        }
-
-        #leaderboard {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 15px 20px;
-            border-radius: 10px;
-            min-width: 200px;
-            max-height: 300px;
-            overflow-y: auto;
-        }
-
-        #leaderboard h3 {
-            margin-bottom: 10px;
-            color: #667eea;
-            text-align: center;
-        }
-
-        .leaderboard-item {
-            padding: 5px 0;
-            font-size: 14px;
-        }
-
-        #connectionStatus {
-            position: absolute;
-            bottom: 20px;
-            left: 20px;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 10px 15px;
-            border-radius: 8px;
-            font-size: 14px;
-        }
-
-        .connected {
-            color: green;
-        }
-
-        .disconnected {
-            color: red;
-        }
-
-        .connecting {
-            color: orange;
-        }
-
-        #deathScreen {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            text-align: center;
-            background: rgba(255, 0, 0, 0.9);
-            padding: 40px;
-            border-radius: 20px;
-            color: white;
-            display: none;
-            pointer-events: all;
-        }
-
-        #instructions {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 15px;
-            border-radius: 10px;
-            font-size: 12px;
-            max-width: 200px;
-        }
-
-        #instructions h4 {
-            color: #667eea;
-            margin-bottom: 8px;
-        }
-    </style>
-</head>
-<body>
-    <canvas id="gameCanvas"></canvas>
+function updatePlayer(player, deltaTime) {
+    // Move towards target
+    const dx = player.targetX - player.x;
+    const dy = player.targetY - player.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
     
-    <div id="ui">
-        <div id="startScreen">
-            <h1>🎮 GIGGITY.IO</h1>
-            <div class="subtitle">Eat food, avoid bigger players, dominate!</div>
-            
-            <input type="text" id="nameInput" placeholder="Enter your name" maxlength="15" value="Quagmire">
-            
-            <br><br>
-            <button id="playButton">PLAY NOW!</button>
-            <div style="margin-top: 20px; font-size: 12px; color: #999;">
-                🎯 Move with mouse • Eat food to grow • Avoid bigger players
-            </div>
-        </div>
-
-        <div id="deathScreen">
-            <h2>💀 YOU DIED!</h2>
-            <p id="deathMessage" style="margin: 20px 0; font-size: 18px;"></p>
-            <button id="respawnButton" style="padding: 15px 40px; font-size: 18px; background: white; color: #667eea; border: none; border-radius: 10px; cursor: pointer;">
-                RESPAWN
-            </button>
-        </div>
-
-        <div id="stats" style="display: none;">
-            <div><strong>Score:</strong> <span id="score">0</span></div>
-            <div><strong>Players:</strong> <span id="playerCount">1</span></div>
-        </div>
-
-        <div id="leaderboard" style="display: none;">
-            <h3>🏆 Leaderboard</h3>
-            <div id="leaderboardList"></div>
-        </div>
-
-        <div id="instructions" style="display: none;">
-            <h4>📖 How to Play</h4>
-            <div>• Move mouse to navigate</div>
-            <div>• Eat dots to grow</div>
-            <div>• Eat smaller players</div>
-            <div>• Avoid bigger players</div>
-        </div>
-
-        <div id="connectionStatus">
-            <span class="disconnected">⚫ Not Connected</span>
-        </div>
-    </div>
-
-    <script>
-        // ============================================
-        // CONFIGURATION
-        // ============================================
-        const WEBSOCKET_URL = 'wss://gigidy.onrender.com';
-        const DEFAULT_CHARACTER_IMAGE = 'images.jfif';
-        // ============================================
-
-        // Game Configuration
-        const CONFIG = {
-            WORLD_WIDTH: 2000,
-            WORLD_HEIGHT: 2000,
-            PLAYER_START_SIZE: 20,
-            FOOD_SIZE: 5,
-            FOOD_COUNT: 50,
-            SPEED_MULTIPLIER: 3,
-        };
-
-        // Game state
-        let canvas, ctx;
-        let gameStarted = false;
-        let ws = null;
+    if (distance > 1) {
+        const speed = CONFIG.SPEED_MULTIPLIER * (100 / player.size);
+        const moveDistance = Math.min(speed, distance);
         
-        let player = {
-            id: null,
-            x: 0,
-            y: 0,
-            displayX: 0, // For smooth interpolation
-            displayY: 0,
-            size: CONFIG.PLAYER_START_SIZE,
-            name: '',
-            score: 0,
-            color: '#FF6B6B',
-            imageUrl: null,
-            image: null
-        };
+        player.x += (dx / distance) * moveDistance;
+        player.y += (dy / distance) * moveDistance;
+    }
+    
+    // Keep player in bounds
+    player.x = Math.max(player.size, Math.min(CONFIG.WORLD_WIDTH - player.size, player.x));
+    player.y = Math.max(player.size, Math.min(CONFIG.WORLD_HEIGHT - player.size, player.y));
+}
 
-        let otherPlayers = new Map();
-        let playerImages = new Map();
-        let food = [];
-        let camera = { x: 0, y: 0, zoom: 1 };
-        let mouse = { x: 0, y: 0 };
-        let reconnectAttempts = 0;
-        let maxReconnectAttempts = 5;
-
-        // Smooth interpolation
-        function lerp(start, end, factor) {
-            return start + (end - start) * factor;
-        }
-
-        // Initialize
-        function init() {
-            canvas = document.getElementById('gameCanvas');
-            ctx = canvas.getContext('2d');
+function checkCollisions() {
+    // Check food collisions
+    for (let i = food.length - 1; i >= 0; i--) {
+        const f = food[i];
+        
+        for (const [id, player] of players) {
+            const dx = player.x - f.x;
+            const dy = player.y - f.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
             
-            resizeCanvas();
-            window.addEventListener('resize', resizeCanvas);
-            
-            canvas.addEventListener('mousemove', (e) => {
-                const rect = canvas.getBoundingClientRect();
-                mouse.x = e.clientX - rect.left;
-                mouse.y = e.clientY - rect.top;
-            });
-
-            document.getElementById('playButton').addEventListener('click', startGame);
-            document.getElementById('respawnButton').addEventListener('click', respawn);
-            document.getElementById('nameInput').addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') startGame();
-            });
-
-            requestAnimationFrame(gameLoop);
-        }
-
-        function resizeCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        }
-
-        function loadImage(url) {
-            return new Promise((resolve) => {
-                if (!url) {
-                    resolve(null);
-                    return;
-                }
-                
-                const img = new Image();
-                img.crossOrigin = "anonymous";
-                img.onload = () => {
-                    console.log('✅ Image loaded:', url);
-                    resolve(img);
-                };
-                img.onerror = () => {
-                    console.warn('❌ Failed to load image:', url);
-                    resolve(null);
-                };
-                img.src = url;
-            });
-        }
-
-        async function startGame() {
-            const name = document.getElementById('nameInput').value.trim() || 'Quagmire';
-            
-            player.name = name;
-            player.color = getRandomColor();
-            player.imageUrl = DEFAULT_CHARACTER_IMAGE;
-            
-            // Load custom image
-            if (DEFAULT_CHARACTER_IMAGE) {
-                player.image = await loadImage(DEFAULT_CHARACTER_IMAGE);
-            }
-            
-            document.getElementById('startScreen').style.display = 'none';
-            document.getElementById('stats').style.display = 'block';
-            document.getElementById('leaderboard').style.display = 'block';
-            document.getElementById('instructions').style.display = 'block';
-            
-            gameStarted = true;
-            connectWebSocket();
-        }
-
-        function respawn() {
-            document.getElementById('deathScreen').style.display = 'none';
-            player.score = 0;
-            player.size = CONFIG.PLAYER_START_SIZE;
-            
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'respawn' }));
+            if (distance < player.size) {
+                // Player ate food
+                player.size += 0.5;
+                player.score += 1;
+                food.splice(i, 1);
+                food.push(createFood());
+                break;
             }
         }
-
-        function connectWebSocket() {
-            try {
-                updateConnectionStatus('connecting');
-                ws = new WebSocket(WEBSOCKET_URL);
-                
-                ws.onopen = () => {
-                    console.log('✅ Connected to server');
-                    updateConnectionStatus('connected');
-                    reconnectAttempts = 0;
+    }
+    
+    // Check player collisions
+    const playerArray = Array.from(players.values());
+    for (let i = 0; i < playerArray.length; i++) {
+        for (let j = i + 1; j < playerArray.length; j++) {
+            const p1 = playerArray[i];
+            const p2 = playerArray[j];
+            
+            const dx = p1.x - p2.x;
+            const dy = p1.y - p2.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // Check if players are touching
+            if (distance < p1.size + p2.size) {
+                // Bigger player eats smaller player (with 10% size advantage needed)
+                if (p1.size > p2.size * 1.1) {
+                    p1.size += p2.size * 0.5;
+                    p1.score += Math.floor(p2.score * 0.5);
                     
-                    ws.send(JSON.stringify({
-                        type: 'join',
-                        name: player.name,
-                        color: player.color,
-                        imageUrl: player.imageUrl
-                    }));
-                };
-
-                ws.onmessage = (event) => {
-                    handleServerMessage(JSON.parse(event.data));
-                };
-
-                ws.onerror = (error) => {
-                    console.error('❌ WebSocket error:', error);
-                    updateConnectionStatus('disconnected');
-                };
-
-                ws.onclose = () => {
-                    console.log('🔴 Disconnected from server');
-                    updateConnectionStatus('disconnected');
+                    // Respawn eaten player
+                    p2.x = Math.random() * CONFIG.WORLD_WIDTH;
+                    p2.y = Math.random() * CONFIG.WORLD_HEIGHT;
+                    p2.size = CONFIG.PLAYER_START_SIZE;
+                    p2.score = 0;
                     
-                    if (gameStarted && reconnectAttempts < maxReconnectAttempts) {
-                        reconnectAttempts++;
-                        setTimeout(() => {
-                            console.log(`🔄 Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})`);
-                            connectWebSocket();
-                        }, 3000);
+                    // Notify player they were eaten
+                    if (p2.ws && p2.ws.readyState === WebSocket.OPEN) {
+                        p2.ws.send(JSON.stringify({
+                            type: 'death',
+                            killedBy: p1.name
+                        }));
                     }
-                };
-            } catch (error) {
-                console.error('Failed to connect:', error);
+                } else if (p2.size > p1.size * 1.1) {
+                    p2.size += p1.size * 0.5;
+                    p2.score += Math.floor(p1.score * 0.5);
+                    
+                    // Respawn eaten player
+                    p1.x = Math.random() * CONFIG.WORLD_WIDTH;
+                    p1.y = Math.random() * CONFIG.WORLD_HEIGHT;
+                    p1.size = CONFIG.PLAYER_START_SIZE;
+                    p1.score = 0;
+                    
+                    // Notify player they were eaten
+                    if (p1.ws && p1.ws.readyState === WebSocket.OPEN) {
+                        p1.ws.send(JSON.stringify({
+                            type: 'death',
+                            killedBy: p2.name
+                        }));
+                    }
+                }
             }
         }
+    }
+}
 
-        async function handleServerMessage(data) {
+function getGameState() {
+    const playersData = Array.from(players.values()).map(p => ({
+        id: p.id,
+        name: p.name,
+        color: p.color,
+        imageUrl: p.imageUrl,
+        x: p.x,
+        y: p.y,
+        size: p.size,
+        score: p.score
+    }));
+    
+    return {
+        type: 'gameState',
+        players: playersData,
+        food: food
+    };
+}
+
+function broadcastGameState() {
+    const state = getGameState();
+    const message = JSON.stringify(state);
+    
+    for (const [id, player] of players) {
+        if (player.ws && player.ws.readyState === WebSocket.OPEN) {
+            player.ws.send(message);
+        }
+    }
+}
+
+// Create HTTP server
+const server = http.createServer((req, res) => {
+    // Enable CORS for all origins
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    
+    if (req.method === 'OPTIONS') {
+        res.writeHead(200);
+        res.end();
+        return;
+    }
+    
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Giggity.io Server</title>
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    max-width: 800px;
+                    margin: 50px auto;
+                    padding: 20px;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                }
+                .container {
+                    background: rgba(255, 255, 255, 0.1);
+                    padding: 30px;
+                    border-radius: 15px;
+                    backdrop-filter: blur(10px);
+                }
+                h1 { margin-top: 0; }
+                .status { 
+                    background: rgba(76, 175, 80, 0.3);
+                    padding: 15px;
+                    border-radius: 8px;
+                    margin: 20px 0;
+                }
+                .info {
+                    background: rgba(255, 255, 255, 0.2);
+                    padding: 15px;
+                    border-radius: 8px;
+                    margin: 10px 0;
+                }
+                code {
+                    background: rgba(0, 0, 0, 0.3);
+                    padding: 2px 6px;
+                    border-radius: 3px;
+                    font-family: monospace;
+                }
+                .stats {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                    gap: 15px;
+                    margin-top: 20px;
+                }
+                .stat-box {
+                    background: rgba(255, 255, 255, 0.2);
+                    padding: 15px;
+                    border-radius: 8px;
+                    text-align: center;
+                }
+                .stat-value {
+                    font-size: 32px;
+                    font-weight: bold;
+                }
+                .stat-label {
+                    font-size: 14px;
+                    opacity: 0.8;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>🎮 Giggity.io WebSocket Server</h1>
+                
+                <div class="status">
+                    <strong>✅ Server Status:</strong> Running
+                </div>
+                
+                <div class="stats">
+                    <div class="stat-box">
+                        <div class="stat-value" id="playerCount">${players.size}</div>
+                        <div class="stat-label">Active Players</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value">${food.length}</div>
+                        <div class="stat-label">Food Items</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value">${CONFIG.TICK_RATE}</div>
+                        <div class="stat-label">Tick Rate (Hz)</div>
+                    </div>
+                </div>
+                
+                <div class="info">
+                    <h3>📡 WebSocket Connection</h3>
+                    <p>Connect to: <code>wss://${req.headers.host}</code></p>
+                    <p style="font-size: 12px; opacity: 0.8;">Use this URL in your game client to connect to the server.</p>
+                </div>
+                
+                <div class="info">
+                    <h3>🎯 Game Configuration</h3>
+                    <ul>
+                        <li>World Size: ${CONFIG.WORLD_WIDTH} x ${CONFIG.WORLD_HEIGHT}</li>
+                        <li>Starting Size: ${CONFIG.PLAYER_START_SIZE}</li>
+                        <li>Food Count: ${CONFIG.FOOD_COUNT}</li>
+                        <li>Speed Multiplier: ${CONFIG.SPEED_MULTIPLIER}x</li>
+                    </ul>
+                </div>
+                
+                <div class="info">
+                    <h3>📝 Setup Instructions</h3>
+                    <ol>
+                        <li>Copy the WebSocket URL above</li>
+                        <li>Open your <code>index.html</code> file</li>
+                        <li>Find the line: <code>const WEBSOCKET_URL = 'YOUR_RENDER_WEBSOCKET_URL_HERE';</code></li>
+                        <li>Replace <code>YOUR_RENDER_WEBSOCKET_URL_HERE</code> with your WebSocket URL</li>
+                        <li>Save and deploy to GitHub Pages</li>
+                    </ol>
+                </div>
+            </div>
+            
+            <script>
+                setInterval(() => {
+                    fetch(window.location.href)
+                        .then(r => r.text())
+                        .then(html => {
+                            const parser = new DOMParser();
+                            const doc = parser.parseFromString(html, 'text/html');
+                            const newCount = doc.getElementById('playerCount').textContent;
+                            document.getElementById('playerCount').textContent = newCount;
+                        });
+                }, 2000);
+            </script>
+        </body>
+        </html>
+    `);
+});
+
+// Create WebSocket server
+const wss = new WebSocket.Server({ server });
+
+wss.on('connection', (ws, req) => {
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    console.log(`New client connected from ${clientIp}`);
+    let playerId = null;
+    
+    ws.on('message', (message) => {
+        try {
+            const data = JSON.parse(message);
+            
             switch (data.type) {
-                case 'init':
-                    player.id = data.id;
-                    player.x = data.x;
-                    player.y = data.y;
-                    player.displayX = data.x;
-                    player.displayY = data.y;
+                case 'join':
+                    // Create new player
+                    playerId = Math.random().toString(36).substr(2, 9);
+                    const player = createPlayer(playerId, data.name, data.color, data.imageUrl);
+                    player.ws = ws;
+                    players.set(playerId, player);
+                    
+                    // Send init message
+                    ws.send(JSON.stringify({
+                        type: 'init',
+                        id: playerId,
+                        x: player.x,
+                        y: player.y
+                    }));
+                    
+                    console.log(`Player ${player.name} (${playerId}) joined. Total players: ${players.size}`);
                     break;
                     
-                case 'gameState':
-                    otherPlayers.clear();
-                    for (const p of data.players) {
-                        if (p.id !== player.id) {
-                            otherPlayers.set(p.id, p);
-                            
-                            if (p.imageUrl && !playerImages.has(p.id)) {
-                                loadImage(p.imageUrl).then(img => {
-                                    if (img) playerImages.set(p.id, img);
-                                });
-                            }
-                        } else {
-                            // Smooth interpolation to server position
-                            player.x = p.x;
-                            player.y = p.y;
-                            player.size = p.size;
-                            player.score = p.score;
-                        }
+                case 'move':
+                    // Update player target position
+                    if (playerId && players.has(playerId)) {
+                        const player = players.get(playerId);
+                        player.targetX = data.targetX;
+                        player.targetY = data.targetY;
                     }
-                    
-                    food = data.food;
-                    document.getElementById('playerCount').textContent = data.players.length;
-                    updateLeaderboard(data.players);
                     break;
 
-                case 'death':
-                    showDeathScreen(data.killedBy);
+                case 'respawn':
+                    // Respawn player
+                    if (playerId && players.has(playerId)) {
+                        const player = players.get(playerId);
+                        player.x = Math.random() * CONFIG.WORLD_WIDTH;
+                        player.y = Math.random() * CONFIG.WORLD_HEIGHT;
+                        player.size = CONFIG.PLAYER_START_SIZE;
+                        player.score = 0;
+                        console.log(`Player ${player.name} respawned`);
+                    }
                     break;
             }
+        } catch (error) {
+            console.error('Error handling message:', error);
         }
-
-        function showDeathScreen(killerName) {
-            const deathScreen = document.getElementById('deathScreen');
-            const deathMessage = document.getElementById('deathMessage');
-            
-            deathMessage.textContent = `You were eaten by ${killerName}!`;
-            deathScreen.style.display = 'block';
-            
-            setTimeout(() => {
-                if (deathScreen.style.display === 'block') {
-                    respawn();
-                }
-            }, 3000);
+    });
+    
+    ws.on('close', () => {
+        if (playerId && players.has(playerId)) {
+            const player = players.get(playerId);
+            console.log(`Player ${player.name} (${playerId}) disconnected. Total players: ${players.size - 1}`);
+            players.delete(playerId);
         }
+    });
+    
+    ws.on('error', (error) => {
+        console.error('WebSocket error:', error);
+    });
+});
 
-        function updateConnectionStatus(status) {
-            const statusEl = document.getElementById('connectionStatus');
-            if (status === 'connected') {
-                statusEl.innerHTML = '<span class="connected">🟢 Connected</span>';
-            } else if (status === 'connecting') {
-                statusEl.innerHTML = '<span class="connecting">🟡 Connecting...</span>';
-            } else {
-                statusEl.innerHTML = '<span class="disconnected">🔴 Disconnected</span>';
-            }
-        }
+// Game loop
+let lastTime = Date.now();
+function gameLoop() {
+    const now = Date.now();
+    const deltaTime = (now - lastTime) / 1000;
+    lastTime = now;
+    
+    // Update all players
+    for (const [id, player] of players) {
+        updatePlayer(player, deltaTime);
+    }
+    
+    // Check collisions
+    checkCollisions();
+    
+    // Broadcast game state
+    broadcastGameState();
+}
 
-        function updateLeaderboard(players) {
-            const sorted = [...players].sort((a, b) => b.score - a.score).slice(0, 10);
-            const list = document.getElementById('leaderboardList');
-            
-            list.innerHTML = sorted.map((p, i) => {
-                const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
-                const isMe = p.id === player.id ? ' <strong>(You)</strong>' : '';
-                return `<div class="leaderboard-item">${medal} ${p.name}: ${p.score}${isMe}</div>`;
-            }).join('');
-        }
+// Initialize game
+initFood();
 
-        // Heavily throttled movement updates
-        let lastMoveSent = 0;
-        const moveThrottle = 200; // Send updates very infrequently
+// Start game loop
+setInterval(gameLoop, 1000 / CONFIG.TICK_RATE);
 
-        function gameLoop(timestamp) {
-            update();
-            render();
-            requestAnimationFrame(gameLoop);
-        }
+// Start server
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`
+╔══════════════════════════════════════════════════════════╗
+║                                                          ║
+║           🎮  GIGGITY.IO SERVER STARTED  🎮             ║
+║                                                          ║
+║  Server running on port: ${PORT}                      ║
+║  WebSocket server ready for connections                 ║
+║                                                          ║
+║  Game Configuration:                                     ║
+║  • World Size: ${CONFIG.WORLD_WIDTH}x${CONFIG.WORLD_HEIGHT}                           ║
+║  • Food Count: ${CONFIG.FOOD_COUNT}                                   ║
+║  • Tick Rate: ${CONFIG.TICK_RATE} Hz                                 ║
+║                                                          ║
+╚══════════════════════════════════════════════════════════╝
+    `);
+});
 
-        function update() {
-            if (!gameStarted) return;
-
-            // Smooth interpolation for display position
-            player.displayX = lerp(player.displayX, player.x, 0.3);
-            player.displayY = lerp(player.displayY, player.y, 0.3);
-
-            // Send movement (heavily throttled)
-            const now = Date.now();
-            if (ws && ws.readyState === WebSocket.OPEN && now - lastMoveSent > moveThrottle) {
-                const worldX = (mouse.x - canvas.width / 2) / camera.zoom + camera.x;
-                const worldY = (mouse.y - canvas.height / 2) / camera.zoom + camera.y;
-                
-                ws.send(JSON.stringify({
-                    type: 'move',
-                    targetX: worldX,
-                    targetY: worldY
-                }));
-                
-                lastMoveSent = now;
-            }
-
-            // Update camera to display position
-            camera.x = player.displayX;
-            camera.y = player.displayY;
-            camera.zoom = Math.max(0.5, 1 - player.size / 300);
-
-            document.getElementById('score').textContent = player.score;
-        }
-
-        function render() {
-            // Clear
-            ctx.fillStyle = '#f0f0f0';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            ctx.save();
-            
-            // Camera
-            ctx.translate(canvas.width / 2, canvas.height / 2);
-            ctx.scale(camera.zoom, camera.zoom);
-            ctx.translate(-camera.x, -camera.y);
-
-            // Grid
-            drawGrid();
-
-            // Food
-            ctx.fillStyle = '#666';
-            food.forEach(f => {
-                ctx.fillStyle = f.color;
-                ctx.beginPath();
-                ctx.arc(f.x, f.y, CONFIG.FOOD_SIZE, 0, Math.PI * 2);
-                ctx.fill();
-            });
-
-            // Other players
-            otherPlayers.forEach(p => {
-                drawPlayer(p, playerImages.get(p.id));
-            });
-
-            // Main player (use display position)
-            if (gameStarted) {
-                const displayPlayer = {...player, x: player.displayX, y: player.displayY};
-                drawPlayer(displayPlayer, player.image);
-            }
-
-            ctx.restore();
-
-            // Cursor
-            drawCursor();
-        }
-
-        function drawGrid() {
-            const gridSize = 50;
-            ctx.strokeStyle = '#ddd';
-            ctx.lineWidth = 1;
-
-            const startX = Math.floor((camera.x - canvas.width / 2 / camera.zoom) / gridSize) * gridSize;
-            const endX = Math.ceil((camera.x + canvas.width / 2 / camera.zoom) / gridSize) * gridSize;
-            const startY = Math.floor((camera.y - canvas.height / 2 / camera.zoom) / gridSize) * gridSize;
-            const endY = Math.ceil((camera.y + canvas.height / 2 / camera.zoom) / gridSize) * gridSize;
-
-            for (let x = startX; x <= endX; x += gridSize) {
-                ctx.beginPath();
-                ctx.moveTo(x, startY);
-                ctx.lineTo(x, endY);
-                ctx.stroke();
-            }
-
-            for (let y = startY; y <= endY; y += gridSize) {
-                ctx.beginPath();
-                ctx.moveTo(startX, y);
-                ctx.lineTo(endX, y);
-                ctx.stroke();
-            }
-        }
-
-        function drawPlayer(p, customImage) {
-            // Circle
-            ctx.fillStyle = p.color;
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
-
-            // Image or face
-            if (customImage) {
-                ctx.save();
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-                ctx.clip();
-                
-                const imgSize = p.size * 2;
-                ctx.drawImage(customImage, p.x - p.size, p.y - p.size, imgSize, imgSize);
-                ctx.restore();
-            } else {
-                // Simple Quagmire face
-                const s = p.size;
-                
-                // Eyes
-                ctx.fillStyle = '#fff';
-                ctx.beginPath();
-                ctx.arc(p.x - s * 0.25, p.y - s * 0.15, s * 0.15, 0, Math.PI * 2);
-                ctx.arc(p.x + s * 0.25, p.y - s * 0.15, s * 0.15, 0, Math.PI * 2);
-                ctx.fill();
-                
-                // Pupils
-                ctx.fillStyle = '#000';
-                ctx.beginPath();
-                ctx.arc(p.x - s * 0.25, p.y - s * 0.15, s * 0.08, 0, Math.PI * 2);
-                ctx.arc(p.x + s * 0.25, p.y - s * 0.15, s * 0.08, 0, Math.PI * 2);
-                ctx.fill();
-
-                // Smile
-                ctx.strokeStyle = '#000';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.arc(p.x, p.y + s * 0.1, s * 0.4, 0.2, Math.PI - 0.2);
-                ctx.stroke();
-
-                // Chin
-                ctx.fillStyle = p.color;
-                ctx.strokeStyle = '#fff';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.ellipse(p.x, p.y + s * 0.6, s * 0.2, s * 0.3, 0, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.stroke();
-            }
-
-            // Name
-            ctx.fillStyle = '#000';
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 3;
-            ctx.font = `bold ${Math.max(12, p.size / 3)}px Arial`;
-            ctx.textAlign = 'center';
-            ctx.strokeText(p.name, p.x, p.y - p.size - 15);
-            ctx.fillText(p.name, p.x, p.y - p.size - 15);
-        }
-
-        function drawCursor() {
-            // Simple dot
-            ctx.fillStyle = 'rgba(102, 126, 234, 0.8)';
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.arc(mouse.x, mouse.y, 6, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
-        }
-
-        function getRandomColor() {
-            const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2'];
-            return colors[Math.floor(Math.random() * colors.length)];
-        }
-
-        init();
-    </script>
-</body>
-</html>
+// Graceful shutdown
+process.on('SIGTERM', () => {
+    console.log('SIGTERM signal received: closing HTTP server');
+    server.close(() => {
+        console.log('HTTP server closed');
+    });
+});
