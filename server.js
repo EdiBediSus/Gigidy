@@ -7,9 +7,9 @@ const CONFIG = {
     WORLD_HEIGHT: 3000,
     PLAYER_START_SIZE: 20,
     FOOD_SIZE: 5,
-    FOOD_COUNT: 200,
-    SPEED_MULTIPLIER: 3, // Optimized speed (was multiplied by tiny deltaTime before)
-    TICK_RATE: 60, // Server updates per second
+    FOOD_COUNT: 150, // Reduced from 200 to reduce server load
+    SPEED_MULTIPLIER: 3, // Reduced from 5 for slower, smoother movement
+    TICK_RATE: 20, // Reduced from 30 to significantly reduce lag
 };
 
 // Game state
@@ -37,11 +37,12 @@ function getRandomColor() {
     return colors[Math.floor(Math.random() * colors.length)];
 }
 
-function createPlayer(id, name, color) {
+function createPlayer(id, name, color, imageUrl) {
     return {
         id,
         name: name || 'Quagmire',
         color: color || getRandomColor(),
+        imageUrl: imageUrl || null,
         x: Math.random() * CONFIG.WORLD_WIDTH,
         y: Math.random() * CONFIG.WORLD_HEIGHT,
         size: CONFIG.PLAYER_START_SIZE,
@@ -151,6 +152,7 @@ function getGameState() {
         id: p.id,
         name: p.name,
         color: p.color,
+        imageUrl: p.imageUrl,
         x: p.x,
         y: p.y,
         size: p.size,
@@ -334,7 +336,7 @@ wss.on('connection', (ws, req) => {
                 case 'join':
                     // Create new player
                     playerId = Math.random().toString(36).substr(2, 9);
-                    const player = createPlayer(playerId, data.name, data.color);
+                    const player = createPlayer(playerId, data.name, data.color, data.imageUrl);
                     player.ws = ws;
                     players.set(playerId, player);
                     
